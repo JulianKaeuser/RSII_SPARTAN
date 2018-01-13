@@ -1,0 +1,119 @@
+ \chapter{Range Sensor}
+ \label{cha:rangeSensor}
+
+The SR02 is a distance sensor based on ultrasound, which 
+allows the measurement of distances between 15 centimeters and approximately
+six meters. It has an $I^{2}C$ interface, with which it can be started and read 
+out. In this chapter, the communication with the sensor via this interface,
+as well as the processing of the measured data, is described.
+
+\section{Communication via $I^{2}C$}
+\label{sec:sensorI2C}
+
+here some stuff on i2c
+
+
+\section{Measurement Processing}
+\label{sec:filter}
+
+Every measurement performed with sensors is subject to fluctuations, and 
+may additionally oly be taken as valid if the values are within the sensors
+measuring range. Hence, it is common to apply a processing procedure to 
+correct erroneous values. Our filtering procedure is based on two steps, 
+as presented in the following.
+
+\subsection{Sensor Range Check}
+\label{subsec:sensorRangeCheck}
+
+The SRF02 sensor features a minimum measurable distance of 15 centimeters, 
+while the maximum distance is about six meters. Consequently, any value
+below the lower threshold or higher than the upper range limit is may not 
+be interpreted as valid. Before any further processing, these conditions
+are checked; if the currently processed value exceeds the range, it is ignored.
+for further processing, the previously stored value from the last measurement 
+is used.
+
+\subsection{Median Filter}
+\label{subsec:medianFilter}
+Before a filter algorithm for measurements can be designed, the unfiltered
+data must be examined for errors. Then, an algorithm capable of reducing 
+these errors can be developed. 
+
+In our case, we observed two noteable characteristics:
+
+\begin{enumerate}
+    \item \textbf{Rogue Results}\hfill \\
+    In some cases, especially if the distance is near the lower bound of the 
+    sensors range, measured values are wrong because they are much too high.
+    For example, when measuring distances between 15 and 20 centimeters, some
+    returned values from the sensor are in the range of 200 plus centimeters.
+    These have to be filtered out only when the previously measured distances
+    clearly indicate that the value around 200 cm cannot be valid.
+    \item \textbf{No Distinction at High Error Rate}\hfill \\
+    If many measurements are wrong (e.g. below the threshold), it is not possible 
+    to determine whether the measured value is right or wrong any more. Hence, the 
+    processing can never filter out all errors.
+\end{enumerate}
+
+Thus, a filter which stores a number of previous values and determines the 
+validity of the current value based on these must be implemented, alothough it can 
+never be perfect with this behaviour. A \emph{median filter} is suited well because 
+it is capable of sorting out too high or too low, rogue measurements. The filter is 
+based on an array, which stores the last $N$ unfiltered values, where $N$ is a 
+parameter which must be found fo roptimal filter behaviour. 
+
+For the median filter, three steps are necessary:
+\begin{itemize}
+    \item First, the oldest value in the array has to be deleted. In our 
+    implementation, the oldest value is overwritten by the current measured
+    value, and the buffer for the last $N$ values is a ring buffer. Consequently,
+    the pointer to the oldest value is incremented, and, if it arrives at the end,
+    reset to the initial value.
+    \item Second, the buffer with the last $N$ values must be sorted. We chose
+    the \emph{Simple Sort} algorithm, which is of $\mathcal{O}(n^{2})$ complexity,
+    iterative and works in-place. SpartanMC does not allow too much recursion,
+    so an iterative approach is required. The complexity is acceptable for 
+    not too large buffers (see section \ref{subsubsec:filterDepth} for 
+    details on the choice). As Simple Sort changes the array it is given as 
+    input, we decided to copy the buffer array and sort the copy; otherwise,
+    the tracking of the order of the last values would be more complex. The 
+    complexity of the filter is not changed by the copying process.
+    \item At last, the median value must be extracted. If the buffer length is
+    odd, the value at \texttt{sorted\_array[length/2 +1]} is used; else, the
+    value \texttt{sorted\_array[length/2]} is the median and thus returned.
+\end{itemize}
+
+All three steps are performed by separate functions.
+
+\subsubsection{Choice of the Filter Size}
+\label{subsubsec:filterDepth}
+The number of values taken into account to determine the current filtered 
+value is the filter size. Its choice affects the memory demand of the filter,
+the computation time per measurement and the quality of the output. 
+
+For our implementation of the median filter, the runtime can be neglected,
+ since it will never be longer than the sampling interval of 65 ms. The 
+ processor is also not concerned with other demanding tasks.
+
+In our case, two arrays (the one with the measured values and the sorted array)
+of the length of the filter have to be allocated. Therefore, the memory demand 
+is linear with the filter size.
+
+Finally, the resulting quality of the filter is the key factor for the choice
+of its size. With too few previous values, the filter is not able to
+neglect many erroneous measurements. A longer filter delays the output of
+the corrected value too long, because for every actual larger change of
+the distance, more old values have to be replaced. Thus, a larger filter is 
+slower; for the median filter, the adaption to a change is even slower than
+for e.g. a moving average filter.
+
+after the consideration of these aspects and experiments with the filter size,
+we chose a size of 8. In comparison with the unfiltered values, this value
+produced acceptably fast changes, while effectively filtering wrong measurements.
+
+
+
+
+
+
+
